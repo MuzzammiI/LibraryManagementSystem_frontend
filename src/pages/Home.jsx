@@ -1,5 +1,6 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { motion } from 'framer-motion';
+import { FaSpinner } from 'react-icons/fa'; // Loading icon from react-icons
 import { AuthContext } from '../contexts/AuthContext';
 import { NotificationContext } from '../contexts/NotificationContext';
 import { getBooks, addBook } from '../services/api';
@@ -7,61 +8,97 @@ import BookCard from '../components/BookCard';
 
 const Home = () => {
   const [books, setBooks] = useState([]);
-  const [search, setSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // Single search field for title/author
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [isbn, setIsbn] = useState('');
+  const [loading, setLoading] = useState(false); // Track loading state
   const { user } = useContext(AuthContext);
   const { showNotification } = useContext(NotificationContext);
 
-  const fetchBooks = useCallback(async () => {
+  const fetchBooks = async (query = '') => {
+    setLoading(true); // Start loading
     try {
-      const { data } = await getBooks();
-      setBooks(data);
+      console.log('Fetching books with query:', query); // Debug log
+      const params = {};
+      if (query && query.trim()) {
+        params.title = query; // Send as title parameter
+        params.author = query; // Send as author parameter
+      }
+      const { data } = await getBooks(params);
+      console.log('Books fetched:', data); // Debug log
+      setBooks(data || []); // Ensure books is always an array
     } catch (error) {
-      showNotification('Error fetching books', error);
+      console.error('Fetch error:', error); // Debug error
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch books';
+      showNotification(errorMessage, 'error');
+      setBooks([]); // Reset books on error
+    } finally {
+      setLoading(false); // Stop loading regardless of success or failure
     }
-  }, [showNotification]);
+  };
 
   useEffect(() => {
     if (user) {
-      fetchBooks();
+      fetchBooks(); // Fetch all books on initial load
     } else {
-      setBooks([]); // Clear books when user logs out
-      setSearch('');
+      setBooks([]);
+      setSearchQuery('');
       setTitle('');
       setAuthor('');
       setIsbn('');
+      setLoading(false); // Ensure loading is off when logged out
     }
-  }, [user, fetchBooks]);
+  }, [user]);
+
+  const handleSearch = () => {
+    if (!searchQuery.trim()) {
+      fetchBooks(); // Fetch all books when search query is empty
+      return;
+    }
+    fetchBooks(searchQuery); // Fetch filtered books when query exists
+  };
 
   const handleAddBook = async (e) => {
     e.preventDefault();
+    if (!title.trim() || !author.trim() || !isbn.trim()) {
+      showNotification('All fields are required', 'error');
+      return;
+    }
     try {
+      setLoading(true); // Start loading for add book
       const { data } = await addBook({ title, author, isbn });
       setBooks([...books, data]);
       showNotification('Book added successfully', 'success');
       setTitle(''); setAuthor(''); setIsbn('');
     } catch (error) {
+      console.error('Add book error:', error); // Debug error
       showNotification(error.response?.data?.message || 'Error adding book', 'error');
+    } finally {
+      setLoading(false); // Stop loading
     }
   };
-
-  const filteredBooks = books.filter(book =>
-    book.title.toLowerCase().includes(search.toLowerCase()) ||
-    book.author.toLowerCase().includes(search.toLowerCase())
-  );
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
       {user && (
-        <input
-          type="text"
-          placeholder="Search by title or author"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="border p-2 w-full mb-4 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="mb-4 flex items-center space-x-2">
+          <input
+            type="text"
+            placeholder="Search by title or author..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSearch()} // Add Enter key support
+            className="border p-2 w-full md:w-3/4 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={handleSearch}
+            disabled={!searchQuery.trim() || loading}
+            className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition w-full md:w-auto disabled:bg-blue-300 disabled:cursor-not-allowed"
+          >
+            {loading ? <FaSpinner className="animate-spin" /> : 'Search'}
+          </button>
+        </div>
       )}
       {user?.role === 'Admin' && (
         <form onSubmit={handleAddBook} className="mb-6 bg-white p-4 rounded shadow-md">
@@ -88,7 +125,13 @@ const Home = () => {
               required
             />
           </div>
-          <button type="submit" className="bg-blue-500 text-white p-2 rounded w-full md:w-auto hover:bg-blue-600 transition">Add Book</button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-blue-500 text-white p-2 rounded w-full md:w-auto hover:bg-blue-600 transition disabled:bg-blue-300 disabled:cursor-not-allowed"
+          >
+            {loading ? <FaSpinner className="animate-spin" /> : 'Add Book'}
+          </button>
         </form>
       )}
       {user ? (
@@ -98,8 +141,12 @@ const Home = () => {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
         >
-          {filteredBooks.length > 0 ? (
-            filteredBooks.map(book => (
+          {loading ? (
+            <div className="col-span-full flex justify-center items-center">
+              <FaSpinner className="text-4xl text-blue-500 animate-spin" />
+            </div>
+          ) : books.length > 0 ? (
+            books.map(book => (
               <motion.div
                 key={book._id}
                 initial={{ y: 20, opacity: 0 }}
@@ -109,12 +156,14 @@ const Home = () => {
                 <BookCard book={book} onRefetch={fetchBooks} />
               </motion.div>
             ))
+          ) : searchQuery ? (
+            <p className="text-center col-span-full text-gray-500">Search result is not available</p>
           ) : (
             <p className="text-center col-span-full text-gray-500">No books available.</p>
           )}
         </motion.div>
       ) : (
-        <p className="text-center text-2xl font-bold text-gray-500">Please login to view books.</p>
+        <p className="text-center text-gray-500">Please login to view books.</p>
       )}
     </div>
   );

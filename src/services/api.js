@@ -15,7 +15,7 @@ api.interceptors.request.use((config) => {
 export const login = (data) => api.post('/auth/login', data);
 export const register = (data) => api.post('/auth/register', data);
 export const addBook = (data) => api.post('/books', data);
-export const getBooks = () => api.get('/books');
+export const getBooks = (params = {}) => api.get('/books', { params }); // Accept params for query filtering
 export const borrowBook = (id) => api.put(`/books/${id}/borrow`);
 export const returnBook = (id) => api.put(`/books/${id}/return`);
 export const updateBook = (id, data) => api.put(`/books/${id}`, data);
